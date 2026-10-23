@@ -1,21 +1,65 @@
+
 name: Build
-on: [push, workflow_dispatch]
+
+on:
+  push:
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - run: unzip project.zip -d src
-      - uses: actions/setup-java@v4
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
-      - uses: gradle/actions/setup-gradle@v3
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.5
+          gradle-version: '8.5'
           cache-disabled: true
-      - run: cd src && gradle assembleDebug --no-daemon --refresh-dependencies
-      - uses: actions/upload-artifact@v4
+
+      - name: Extract and find Android project
+        run: |
+          set -eu
+
+          if [ ! -f project.zip ]; then
+            echo "ERROR: project.zip was not found in the repository root."
+            exit 1
+          fi
+
+          mkdir -p src
+          unzip -o project.zip -d src
+
+          PROJECT_FILE=$(find src -type f \( \
+            -name settings.gradle \
+            -o -name settings.gradle.kts \
+          \) -print -quit)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: No settings.gradle or settings.gradle.kts found in project.zip."
+            echo "Check the ZIP structure."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+          echo "Android project directory: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Build AutoClicker APK
+        run: |
+          gradle -p "$PROJECT_DIR" assembleDebug --no-daemon
+
+      - name: Upload AutoClicker APK
+        uses: actions/upload-artifact@v4
         with:
           name: AutoClicker
-          path: src/app/build/outputs/apk/debug/app-debug.apk
+          path: src/**/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          
